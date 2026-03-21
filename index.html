@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="uk">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Translation Editor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="icon" type="image/png" href="icon.png" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+
+  <!-- ══════════════ HEADER ══════════════ -->
+  <header>
+    <div class="logo">⟨ TranslationEditor ⟩</div>
+    <div class="header-actions" id="header-actions" style="display:none">
+      <span class="modified-badge" id="modified-badge-header">● Unsaved changes</span>
+
+      <!-- Auto-save toggle -->
+      <label class="toggle-wrap autosave-toggle" id="autosave-wrap"
+        title="Automatically save to the original file on each row navigation (requires file opened via Browse button)">
+        <input type="checkbox" id="autosave-chk" onchange="toggleAutoSave()" />
+        <span class="toggle"></span>
+        Auto-save
+        <span id="autosave-status" class="autosave-status"></span>
+      </label>
+
+      <button class="btn btn-ghost" onclick="openModal()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M4 6h16M4 12h8m-8 6h4" />
+          <path d="M15 12l4 4m0-4l-4 4" stroke-linecap="round" />
+        </svg>
+        Columns
+      </button>
+      <button class="btn btn-success" onclick="saveCSV()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <polyline points="7 10 12 15 17 10" />
+          <line x1="12" y1="15" x2="12" y2="3" />
+        </svg>
+        Save CSV
+      </button>
+    </div>
+  </header>
+
+  <!-- ══════════════ UPLOAD SCREEN ══════════════ -->
+  <div id="upload-screen">
+    <div class="upload-card" id="drop-zone" onclick="openFilePicker()">
+      <div class="upload-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+          <polyline points="14 2 14 8 20 8" />
+          <line x1="12" y1="18" x2="12" y2="12" />
+          <line x1="9" y1="15" x2="15" y2="15" />
+        </svg>
+      </div>
+      <h2>Open CSV file</h2>
+      <p>Drag &amp; drop your translation CSV file here,<br />or click to choose a file from disk.</p>
+      <button class="btn btn-primary" onclick="event.stopPropagation(); openFilePicker()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <polyline points="17 8 12 3 7 8" />
+          <line x1="12" y1="3" x2="12" y2="15" />
+        </svg>
+        Browse file
+      </button>
+      <p class="upload-hint">Supports any CSV with header row • UTF-8 encoding</p>
+      <input type="file" id="file-input" accept=".csv,text/csv" />
+    </div>
+  </div>
+
+  <!-- ══════════════ EDITOR SCREEN ══════════════ -->
+  <div id="editor-screen">
+    <div class="progress-bar-wrap">
+      <div class="progress-bar" id="progress-bar"></div>
+    </div>
+
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <div class="nav-group">
+        <button class="btn-icon" id="first-btn" title="First row" onclick="goFirst()">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M6 6h2v12H6zm3.5 6 8.5 6V6z" />
+          </svg>
+        </button>
+        <button class="btn-icon" id="prev-btn" title="Prev row (Alt+←)" onclick="goRow(-1)">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
+          </svg>
+        </button>
+        <input type="number" class="jump-input" id="jump-input" min="1" title="Jump to row"
+          onchange="jumpTo(this.value)" />
+        <button class="btn-icon" id="next-btn" title="Next row (Alt+→)" onclick="goRow(1)">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" />
+          </svg>
+        </button>
+        <button class="btn-icon" id="last-btn" title="Last row" onclick="goLast()">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M16 6h2v12h-2zm-1.5 6L6 6v12z" />
+          </svg>
+        </button>
+      </div>
+
+      <span class="row-counter">
+        Row <strong id="row-num">1</strong> of <strong id="row-total">0</strong><span id="row-id-val" class="row-id-val" style="display:none"></span>
+      </span>
+
+      <div class="toolbar-sep"></div>
+
+      <div class="kbd-hint">
+        <span class="kbd">Alt</span>+<span class="kbd">←</span><span class="kbd">→</span> navigate
+        &nbsp;
+        <span class="kbd">Ctrl S</span> save
+      </div>
+
+      <span class="modified-badge" id="modified-badge-toolbar">● Unsaved</span>
+    </div>
+
+    <!-- Tools bar -->
+    <div class="tools-bar" id="tools-bar" style="display:none">
+
+      <!-- Quote replacement -->
+      <div class="tools-group">
+        <span class="tools-label">Quotes</span>
+        <button class="btn btn-ghost btn-sm" onclick="replaceQuotesCurrentCell()"
+          title="Replace &quot;…&quot; → «…» in focused cell">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"/>
+            <path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"/>
+          </svg>
+          " → «»
+        </button>
+
+        <div class="col-picker-wrap" onclick="event.stopPropagation()">
+          <button class="btn btn-ghost btn-sm" id="col-picker-btn" onclick="toggleColPicker()">
+            Columns
+            <svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12" style="margin-left:2px">
+              <path d="M7 10l5 5 5-5z"/>
+            </svg>
+          </button>
+          <div class="col-picker-panel" id="col-picker-panel"></div>
+        </div>
+
+        <button class="btn btn-ghost btn-sm" onclick="replaceQuotesBulk()"
+          title="Replace quotes in all rows for checked columns">
+          Replace all rows
+        </button>
+      </div>
+
+      <div class="toolbar-sep"></div>
+
+      <!-- Capitalize -->
+      <div class="tools-group">
+        <span class="tools-label">Capitalize</span>
+        <button class="btn btn-ghost btn-sm" onclick="fixCapCurrentCell()"
+          title="Sentence case + remove CAPS LOCK in focused cell">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 19h2.5l1.5-4m0 0h6m-6 0 3-8 3 8m6 4h-2.5L15 15"/>
+          </svg>
+          Aa
+        </button>
+      </div>
+
+      <div class="toolbar-sep"></div>
+
+      <!-- Edit: add column / insert row -->
+      <div class="tools-group">
+        <span class="tools-label">Edit</span>
+
+        <!-- + Column -->
+        <div class="col-picker-wrap" onclick="event.stopPropagation()">
+          <button class="btn btn-ghost btn-sm" onclick="toggleAddColPanel()"
+            title="Add a new empty column to the CSV">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>
+            </svg>
+            Column
+          </button>
+          <div class="col-picker-panel edit-panel" id="add-col-panel">
+            <p class="edit-panel-title">New column</p>
+            <input id="new-col-name" class="lang-name-input" placeholder="Column name…"
+              onkeydown="if(event.key==='Enter') addColumn()" style="width:100%;margin-bottom:8px" />
+            <button class="btn btn-primary btn-sm" style="width:100%" onclick="addColumn()">Add column</button>
+          </div>
+        </div>
+
+        <!-- + Row -->
+        <div class="col-picker-wrap" onclick="event.stopPropagation()">
+          <button class="btn btn-ghost btn-sm" onclick="toggleInsertRowPanel()"
+            title="Insert a new empty row at a given position">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            Row
+          </button>
+          <div class="col-picker-panel edit-panel" id="insert-row-panel">
+            <p class="edit-panel-title">Insert empty row at position</p>
+            <input id="insert-row-pos" type="number" class="lang-name-input" min="1" placeholder="Row #"
+              onkeydown="if(event.key==='Enter') insertRow()" style="width:100%;margin-bottom:8px" />
+            <button class="btn btn-primary btn-sm" style="width:100%" onclick="insertRow()">Insert row</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Column labels strip -->
+    <div class="col-labels-strip" id="col-labels-strip"></div>
+
+    <!-- Cells area -->
+    <div class="cells-area" id="cells-area"></div>
+  </div>
+
+  <!-- ══════════════ COLUMN MAPPING MODAL ══════════════ -->
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modal-header">
+        <div class="modal-header-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="7" />
+            <rect x="14" y="3" width="7" height="7" />
+            <rect x="14" y="14" width="7" height="7" />
+            <rect x="3" y="14" width="7" height="7" />
+          </svg>
+        </div>
+        <div>
+          <div class="modal-title">Column Mapping</div>
+          <div class="modal-subtitle">Select which columns contain original text and translations</div>
+        </div>
+        <button class="modal-close" onclick="closeModal()">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="mapping-info">
+          💡 Pick the <strong>Original</strong> source column (toggle <em>Editable</em> to allow changes), then add one
+          or more <strong>language</strong> columns to review.
+        </div>
+        <div id="mapping-rows"></div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="applyMapping()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+          Apply
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════ TOAST ══════════════ -->
+  <div class="toast" id="toast">
+    <span class="toast-icon" id="toast-icon">✓</span>
+    <span id="toast-msg">Saved successfully</span>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+
+</html>
