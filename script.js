@@ -12,8 +12,10 @@ let currentRow = 0;
 let isModified = false;
 let originalFileName = 'translations.csv';
 let lastFocusedCellId = null;
-let fileHandle = null;  // FileSystemFileHandle (FSA API) — enables auto-save
-let autoSave = false;   // whether auto-save is currently active
+let fileHandle = null;
+let autoSave = false;
+let searchQuery = '';       // current search string
+let filteredIndices = null; // null = all rows; array = filtered subset
 
 // ─────────── CSV Parsing ───────────
 // RFC-4180 compliant parser that handles multi-line quoted fields
@@ -58,6 +60,51 @@ function serializeCSV(headers, data) {
   };
   const rows = [headers, ...data];
   return rows.map(r => r.map(escapeField).join(',')).join('\r\n');
+}
+
+// ─────────── Search / Filter ───────────
+function getEffectiveTotal() {
+  return filteredIndices ? filteredIndices.length : csvData.length;
+}
+
+function getDataIndex(visIdx) {
+  return filteredIndices ? filteredIndices[visIdx] : visIdx;
+}
+
+function onSearchInput(value) {
+  searchQuery = value;
+  filteredIndices = null;
+  currentRow = 0;
+
+  const q = searchQuery.toLowerCase().trim();
+  if (q) {
+    const cols = [mapping.original, ...mapping.langs.map(l => l.colIndex)];
+    filteredIndices = csvData.reduce((acc, row, i) => {
+      if (cols.some(ci => (row[ci] || '').toLowerCase().includes(q))) acc.push(i);
+      return acc;
+    }, []);
+  }
+
+  renderRow();
+  updateNav();
+  updateSearchBadge();
+}
+
+function updateSearchBadge() {
+  const badge = document.getElementById('search-badge');
+  if (!badge) return;
+  if (filteredIndices) {
+    badge.textContent = filteredIndices.length + ' / ' + csvData.length;
+    badge.style.display = '';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+function clearSearch() {
+  const inp = document.getElementById('search-input');
+  if (inp) inp.value = '';
+  onSearchInput('');
 }
 
 // ─────────── File Input ───────────
@@ -356,6 +403,13 @@ function showEditorScreen() {
   ed.classList.add('visible');
   document.getElementById('header-actions').style.display = 'flex';
   document.getElementById('tools-bar').style.display = 'flex';
+  document.getElementById('search-wrap').style.display = 'flex';
+
+  // Clear any previous search state
+  searchQuery = '';
+  filteredIndices = null;
+  const si = document.getElementById('search-input');
+  if (si) si.value = '';
 
   updateColLabels();
   renderRow();
@@ -386,10 +440,10 @@ function updateColLabels() {
 // Sync all visible cell DOMs back to csvData (no side-effects)
 function syncDOMToData() {
   if (csvData.length === 0) return;
-  const visible = Math.min(rowsPerPage, csvData.length - currentRow);
+  const visible = Math.min(rowsPerPage, getEffectiveTotal() - currentRow);
 
   for (let offset = 0; offset < visible; offset++) {
-    const row = csvData[currentRow + offset];
+    const row = csvData[getDataIndex(currentRow + offset)];
 
     if (mapping.originalEditable) {
       const el = document.getElementById(`cell-${offset}-original`);
@@ -413,26 +467,34 @@ function flushCurrentRow() {
 }
 
 function renderRow() {
-  if (csvData.length === 0) return;
-
-  const total = csvData.length;
-  const visible = Math.min(rowsPerPage, total - currentRow);
-
-  document.getElementById('progress-bar').style.width = ((currentRow + 1) / total * 100) + '%';
-  document.getElementById('row-num').textContent = currentRow + 1;
-  document.getElementById('row-total').textContent = total;
-  document.getElementById('jump-input').value = currentRow + 1;
-
-  // Show ID value in toolbar (single-row mode or first visible row)
-  const firstRow = csvData[currentRow];
-  const idVal = (mapping.idColIndex !== null && firstRow) ? (firstRow[mapping.idColIndex] || '') : '';
-  const idLabelEl = document.getElementById('row-id-val');
-  if (idLabelEl) {
-    idLabelEl.textContent = idVal ? idVal : '';
-    idLabelEl.style.display = idVal ? '' : 'none';
-  }
+  const effectiveTotal = getEffectiveTotal();
 
   const area = document.getElementById('cells-area');
+
+  if (csvData.length === 0) return;
+
+  if (effectiveTotal === 0) {
+    area.innerHTML = '<div class="no-results">No rows match the search</div>';
+    document.getElementById('progress-bar').style.width = '0';
+    document.getElementById('row-num').textContent = '0';
+    document.getElementById('row-total').textContent = '0';
+    return;
+  }
+
+  const visible = Math.min(rowsPerPage, effectiveTotal - currentRow);
+
+  document.getElementById('progress-bar').style.width = ((currentRow + 1) / effectiveTotal * 100) + '%';
+  document.getElementById('row-num').textContent = currentRow + 1;
+  document.getElementById('row-total').textContent = effectiveTotal;
+  document.getElementById('jump-input').value = currentRow + 1;
+
+  // ID value in toolbar shows the first visible actual row's ID column
+  const firstDataIdx = getDataIndex(currentRow);
+  const firstRow = csvData[firstDataIdx];
+  const idVal = (mapping.idColIndex !== null && firstRow) ? (firstRow[mapping.idColIndex] || '') : '';
+  const idLabelEl = document.getElementById('row-id-val');
+  if (idLabelEl) { idLabelEl.textContent = idVal; idLabelEl.style.display = idVal ? '' : 'none'; }
+
   area.innerHTML = '';
 
   const cols = 1 + mapping.langs.length;
@@ -467,16 +529,15 @@ function renderRow() {
   }
 
   for (let offset = 0; offset < visible; offset++) {
-    const rowIdx = currentRow + offset;
-    const row = csvData[rowIdx];
+    const dataIdx = getDataIndex(currentRow + offset);
+    const row = csvData[dataIdx];
 
-    // Row separator with row number
     if (rowsPerPage > 1) {
       const sep = document.createElement('div');
       sep.className = 'row-sep';
       const rowIdVal = (mapping.idColIndex !== null && row[mapping.idColIndex])
         ? ' <span class="row-sep-id">' + row[mapping.idColIndex] + '</span>' : '';
-      sep.innerHTML = `<span class="row-sep-num">#${rowIdx + 1}${rowIdVal}</span><span class="row-sep-line"></span>`;
+      sep.innerHTML = `<span class="row-sep-num">#${dataIdx + 1}${rowIdVal}</span><span class="row-sep-line"></span>`;
       area.appendChild(sep);
     }
 
@@ -554,9 +615,10 @@ function renderRow() {
       cell.addEventListener('input', () => { updateChar(); markModified(); });
       cell.addEventListener('blur',  () => { if (autoSave && fileHandle && isModified) triggerAutoSave(); });
 
-      // Focus first cell of first visible row
+      // Focus first cell of first visible row (unless user is searching)
       if (offset === 0 && i === 0) {
         setTimeout(() => {
+          if (document.activeElement === document.getElementById('search-input')) return;
           cell.focus();
           const range = document.createRange();
           const sel = window.getSelection();
@@ -582,7 +644,12 @@ function markModified() {
 }
 
 function updateNav() {
-  const total = csvData.length;
+  const total = getEffectiveTotal();
+  const allVisible = rowsPerPage >= total || total === 0;
+
+  const toolbar = document.querySelector('.toolbar');
+  if (toolbar) toolbar.style.display = allVisible ? 'none' : '';
+
   document.getElementById('first-btn').disabled = currentRow === 0;
   document.getElementById('prev-btn').disabled = currentRow === 0;
   document.getElementById('next-btn').disabled = currentRow >= total - 1;
@@ -593,18 +660,18 @@ function updateNav() {
 function goRow(delta) {
   flushCurrentRow();
   const step = delta * rowsPerPage;
-  const next = Math.max(0, Math.min(currentRow + step, csvData.length - 1));
+  const next = Math.max(0, Math.min(currentRow + step, getEffectiveTotal() - 1));
   currentRow = next;
   renderRow();
   updateNav();
 }
 
 function goFirst() { flushCurrentRow(); currentRow = 0; renderRow(); updateNav(); }
-function goLast()  { flushCurrentRow(); currentRow = Math.max(0, csvData.length - rowsPerPage); renderRow(); updateNav(); }
+function goLast()  { flushCurrentRow(); currentRow = Math.max(0, getEffectiveTotal() - rowsPerPage); renderRow(); updateNav(); }
 
 function jumpTo(val) {
   const n = parseInt(val) - 1;
-  if (isNaN(n) || n < 0 || n >= csvData.length) return;
+  if (isNaN(n) || n < 0 || n >= getEffectiveTotal()) return;
   flushCurrentRow();
   currentRow = n;
   renderRow();

@@ -16,6 +16,19 @@
   <!-- ══════════════ HEADER ══════════════ -->
   <header>
     <div class="logo">⟨ TranslationEditor ⟩</div>
+
+    <!-- Search bar (visible when editor is open) -->
+    <div id="search-wrap" class="search-wrap" style="display:none">
+      <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      <input id="search-input" class="search-input" type="search"
+        placeholder="Search in mapped columns…" autocomplete="off"
+        oninput="onSearchInput(this.value)" />
+      <span id="search-badge" class="search-badge" style="display:none"></span>
+      <button class="search-clear" onclick="clearSearch()" title="Clear search">✕</button>
+    </div>
+
     <div class="header-actions" id="header-actions" style="display:none">
       <span class="modified-badge" id="modified-badge-header">● Unsaved changes</span>
 
