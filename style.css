@@ -451,7 +451,7 @@ header {
   border-bottom: 1px solid var(--border);
   padding: 0 24px;
   display: flex;
-  gap: 16px;
+  align-items: stretch;
   overflow-x: auto;
 }
 
@@ -464,6 +464,10 @@ header {
   color: var(--text-muted);
   white-space: nowrap;
   border-bottom: 2px solid transparent;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .col-label .dot {
@@ -475,6 +479,47 @@ header {
 
 .col-label.is-original { border-bottom-color: var(--accent); color: var(--accent2); }
 .col-label.is-original .dot { background: var(--accent); }
+
+/* Column resize handle */
+.col-resize-handle {
+  width: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: col-resize;
+  flex-shrink: 0;
+  position: relative;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.col-resize-handle::after {
+  content: '';
+  width: 2px;
+  height: 60%;
+  border-radius: 2px;
+  background: var(--border);
+  transition: background var(--transition), height var(--transition), box-shadow var(--transition);
+}
+.col-resize-handle:hover::after {
+  background: var(--accent);
+  height: 80%;
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+.col-resize-handle.active::after {
+  background: var(--accent2);
+  height: 90%;
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+
+/* Prevent text selection during column resize */
+body.col-resizing {
+  cursor: col-resize !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+body.col-resizing * {
+  cursor: col-resize !important;
+}
 
 /* Cells area */
 .cells-area {

@@ -16,6 +16,7 @@ let fileHandle = null;
 let autoSave = false;
 let searchQuery = '';       // current search string
 let filteredIndices = null; // null = all rows; array = filtered subset
+let colWidths = null;       // null = equal; array of fractional widths (e.g. [1, 1.5, 0.8])
 
 // ─────────── CSV Parsing ───────────
 // RFC-4180 compliant parser that handles multi-line quoted fields
@@ -420,20 +421,126 @@ function updateColLabels() {
   const strip = document.getElementById('col-labels-strip');
   strip.innerHTML = '';
 
+  const cols = 1 + mapping.langs.length;
+
+  // Ensure colWidths array matches current column count
+  if (!colWidths || colWidths.length !== cols) {
+    colWidths = new Array(cols).fill(1);
+  }
+
   const makeLabel = (text, isOrig, color) => {
     const el = document.createElement('span');
     el.className = 'col-label' + (isOrig ? ' is-original' : '');
     el.innerHTML = `<span class="dot" style="background:${color}"></span> ${text}`;
-    strip.appendChild(el);
+    return el;
   };
 
   const origLabel = (csvHeaders[mapping.original] || 'col ' + mapping.original) +
     (mapping.originalEditable ? ' ✎' : '');
-  makeLabel('Original — ' + origLabel, true, 'var(--accent)');
+  const origEl = makeLabel('Original — ' + origLabel, true, 'var(--accent)');
+  origEl.style.flex = String(colWidths[0]);
+  strip.appendChild(origEl);
 
+  const langColors = ['#34d399', '#60a5fa', '#f472b6', '#fb923c', '#a78bfa'];
   mapping.langs.forEach((l, i) => {
-    const colors = ['#34d399', '#60a5fa', '#f472b6', '#fb923c', '#a78bfa'];
-    makeLabel(l.name + ' — ' + (csvHeaders[l.colIndex] || 'col ' + l.colIndex), false, colors[i % colors.length]);
+    const color = langColors[i % langColors.length];
+
+    // Add resize handle between columns
+    const handle = document.createElement('div');
+    handle.className = 'col-resize-handle';
+    handle.dataset.colIdx = String(i); // index of handle (between col i and col i+1)
+    strip.appendChild(handle);
+
+    const labelEl = makeLabel(l.name + ' — ' + (csvHeaders[l.colIndex] || 'col ' + l.colIndex), false, color);
+    labelEl.style.flex = String(colWidths[i + 1]);
+    strip.appendChild(labelEl);
+  });
+
+  initColResize();
+}
+
+function getGridTemplateColumns() {
+  if (!colWidths) return `repeat(${1 + mapping.langs.length}, 1fr)`;
+  return colWidths.map(w => w + 'fr').join(' ');
+}
+
+function applyColWidthsToRows() {
+  const tpl = getGridTemplateColumns();
+  document.querySelectorAll('.cell-row').forEach(row => {
+    row.style.gridTemplateColumns = tpl;
+  });
+  // Update label flex values in the strip
+  const labels = document.querySelectorAll('#col-labels-strip .col-label');
+  labels.forEach((label, i) => {
+    if (colWidths && colWidths[i] !== undefined) {
+      label.style.flex = String(colWidths[i]);
+    }
+  });
+}
+
+function initColResize() {
+  const handles = document.querySelectorAll('#col-labels-strip .col-resize-handle');
+  handles.forEach(handle => {
+    // Drag to resize
+    handle.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      const idx = parseInt(handle.dataset.colIdx);
+      const leftColIdx = idx;       // colWidths index of the column to the left
+      const rightColIdx = idx + 1;  // colWidths index of the column to the right
+
+      const strip = document.getElementById('col-labels-strip');
+      const stripRect = strip.getBoundingClientRect();
+      // Sum of all flex values -> maps to strip width minus handle widths
+      const handleCount = mapping.langs.length;
+      const handleTotalWidth = handleCount * 12; // 12px per handle
+      const usableWidth = stripRect.width - 48 - handleTotalWidth; // 48px = 24px padding × 2
+
+      const totalFlex = colWidths.reduce((a, b) => a + b, 0);
+      const pxPerFlex = usableWidth / totalFlex;
+
+      const startX = e.clientX;
+      const startLeftW = colWidths[leftColIdx];
+      const startRightW = colWidths[rightColIdx];
+      const minFlex = 0.2; // minimum column width
+
+      handle.classList.add('active');
+      document.body.classList.add('col-resizing');
+
+      const onMove = (ev) => {
+        const dx = ev.clientX - startX;
+        const dFlex = dx / pxPerFlex;
+
+        let newLeft = startLeftW + dFlex;
+        let newRight = startRightW - dFlex;
+
+        // Clamp
+        if (newLeft < minFlex) { newRight += (newLeft - minFlex); newLeft = minFlex; }
+        if (newRight < minFlex) { newLeft += (newRight - minFlex); newRight = minFlex; }
+
+        colWidths[leftColIdx] = Math.max(minFlex, newLeft);
+        colWidths[rightColIdx] = Math.max(minFlex, newRight);
+
+        applyColWidthsToRows();
+      };
+
+      const onUp = () => {
+        handle.classList.remove('active');
+        document.body.classList.remove('col-resizing');
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      };
+
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+
+    // Double-click to reset to equal widths
+    handle.addEventListener('dblclick', (e) => {
+      e.preventDefault();
+      const cols = 1 + mapping.langs.length;
+      colWidths = new Array(cols).fill(1);
+      applyColWidthsToRows();
+    });
   });
 }
 
@@ -505,7 +612,7 @@ function renderRow() {
   if (rowsPerPage > 1) {
     const headRow = document.createElement('div');
     headRow.className = 'cell-row col-header-row';
-    headRow.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+    headRow.style.gridTemplateColumns = getGridTemplateColumns();
 
     // Original header
     const badgeClass = isEditable ? 'badge-original-editable' : 'badge-original';
@@ -543,7 +650,7 @@ function renderRow() {
 
     const cellRow = document.createElement('div');
     cellRow.className = 'cell-row';
-    cellRow.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+    cellRow.style.gridTemplateColumns = getGridTemplateColumns();
     area.appendChild(cellRow);
 
     // ── Original cell ──
